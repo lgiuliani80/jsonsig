@@ -18,20 +18,9 @@ if (args.Length != 2)
 }
 
 var host = Host.CreateDefaultBuilder(args)
-    .ConfigureLogging(logging => {
-        logging.AddSimpleConsole(options =>
-        {
-            options.IncludeScopes = true;
-            options.SingleLine = true;
-            options.TimestampFormat = "[yyyy-MM-dd HH:mm:ss.fff] ";
-        });
-    })
     .Build();
 
 var config = host.Services.GetRequiredService<IConfiguration>();
-var log = host.Services.GetRequiredService<ILogger<Program>>();
-
-log.LogInformation($"STARTED");
 
 var inputJson = File.ReadAllText(args[1]);
 var cmd = args[0];
@@ -39,31 +28,69 @@ var cmd = args[0];
 var jo = JsonNode.Parse(inputJson);
 
 if (jo == null) {
-    log.LogError("Invalid JSON");
+    Console.Error.WriteLine("Invalid JSON");
     return;
 }
 
 switch (cmd)
 {
     case "sign":
+    {
         jo["sig"] = "";
         var textToSign = jo.ToJsonString();
-        var bytesToHash = Encoding.UTF8.GetBytes(textToSign);
-        var sha256 = SHA256.Create();
-        var hash = sha256.ComputeHash(bytesToHash);
-        var rsa = RSA.Create();
-        rsa.ImportFromPem(File.ReadAllText(config["PrivateKeyFile"]));
-        var encrypted = rsa.Encrypt(hash, RSAEncryptionPadding.Pkcs1);
+        var bytesToSign = Encoding.UTF8.GetBytes(textToSign);
+
+        //Console.Error.WriteLine($"Text to sign: '{textToSign}'");
 
         var edf = ECDsa.Create();
         edf.ImportFromPem(File.ReadAllText(config["PrivateKeyFileDf"]));  // 160 bit key brainpoolP160r1 RFC 5639
-        var encdh = edf.SignData(bytesToHash, 0, bytesToHash.Length, HashAlgorithmName.SHA256);
+        var encdh = edf.SignData(bytesToSign, 0, bytesToSign.Length, HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation);
 
-        jo["sig"] = Convert.ToBase64String(encdh);
+        jo["sig"] = config["KeySpec"] + "." + Base64Url.Encode(encdh);
 
         Console.WriteLine(jo.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
 
         break;
-}
+    }
+    case "verify":
+    {
+        var sigParts = jo["sig"]?.ToString()?.Split('.');
 
-log.LogInformation("END");
+        if (sigParts == null || sigParts.Length < 2) 
+        {
+            Console.Error.WriteLine("Missing signature");
+            Environment.Exit(2);
+        }
+
+        if (sigParts[0] != config["KeySpec"])
+        {
+            Console.Error.WriteLine("Unknown key spec");
+            Environment.Exit(3);
+        }
+
+        var curSig = sigParts[1];
+        var curSigBytes = Base64Url.Decode(curSig);
+
+        jo["sig"] = "";
+        var textToSign = jo.ToJsonString();
+        var bytesToSign = Encoding.UTF8.GetBytes(textToSign);
+
+        var edf = ECDsa.Create();
+        if (config["PrivateKeyFileDf"] == null || !File.Exists(config["PrivateKeyFileDf"])) 
+        {
+            edf.ImportFromPem(File.ReadAllText(config["PublicKeyFileDf"]));
+        }
+        else
+        {
+            edf.ImportFromPem(File.ReadAllText(config["PrivateKeyFileDf"]));  // 160 bit key brainpoolP160r1 RFC 5639
+        }
+        var result = edf.VerifyData(bytesToSign, curSigBytes, HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation);
+
+        Console.WriteLine($"Result = {result}");
+
+        if (!result)
+            Environment.Exit(1);
+
+        break;
+    }
+}
