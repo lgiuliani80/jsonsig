@@ -40,6 +40,6 @@ the private key will be stored in the `mykeyfile.pub.pem`.
   the result of the check will be printed in standard output.
 
   **NOTES**: 
-  - the supplied ``.json` file needs to be a Json Signed Object i.e. a Json Object containing the "sig" string member;
+  - the supplied `.json` file needs to be a Json Signed Object i.e. a Json Object containing the "sig" string member;
   - the `appsettings.json` needs to contain the `"PublicKeyFileDf"` key, pointing to the .pem file containing the __Public Key__ **OR** `"PrivateKeyFileDf"` key, pointing to the .pem file containing the __Private Key__.
   - the key specified contained in the `"sig"` member of the JSON object will be compared against the `"KeySpec"` setting contains in `appsettings.json`.
