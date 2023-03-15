@@ -1,4 +1,4 @@
-# JSON signer / verifies
+# JSON signer / verifier
 
 ## Key creation
 
